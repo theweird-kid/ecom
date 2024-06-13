@@ -28,13 +28,18 @@ func NewHandler(q *database.Queries) *Handler {
 
 func (h *Handler) RegisterRoutes(router *chi.Mux) {
 	router.Post("/login", h.HandleLogin)
-	router.Get("/login_test", auth.MiddlewareAuth(h.HandleTest, h.q))
+	router.Get("/login", auth.MiddlewareAuth(h.HandleTest, h.q))
 	router.Post("/register", h.HandleRegister)
 }
 
 func (h *Handler) HandleTest(w http.ResponseWriter, r *http.Request) {
 	id := auth.GetUserIDFromContext(r.Context())
-	utils.RespondWithError(w, 200, fmt.Sprintf("User %v is logged in", id))
+	user, err := h.q.GetUserByID(r.Context(), id)
+	if err != nil {
+		utils.RespondWithError(w, 500, fmt.Sprintln("Internal server problem"))
+		return
+	}
+	utils.RespondWithJSON(w, 200, models.DatabaseUserToUser(user))
 }
 
 func (h *Handler) HandleLogin(w http.ResponseWriter, r *http.Request) {
@@ -54,12 +59,12 @@ func (h *Handler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	//get user by email
 	u, err := h.q.GetUserByEmail(r.Context(), params.Email)
 	if err != nil {
-		utils.RespondWithError(w, http.StatusFound, fmt.Sprintln("Invalid email or password"))
+		utils.RespondWithError(w, http.StatusNotFound, fmt.Sprintln("Invalid email or password"))
 		return
 	}
 
 	if !auth.ComparePassword(u.Password, []byte(params.Password)) {
-		utils.RespondWithError(w, http.StatusFound, fmt.Sprintln("Invalid email or password"))
+		utils.RespondWithError(w, http.StatusNotFound, fmt.Sprintln("Invalid email or password"))
 		return
 	}
 
@@ -69,7 +74,19 @@ func (h *Handler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	utils.RespondWithJSON(w, http.StatusOK, map[string]string{"token": token})
+	//create token cookie
+	cookie := &http.Cookie{
+		Name:     "Authorization",
+		Value:    token,
+		MaxAge:   3600,
+		Path:     "/",  // Make cookie accessible to all paths
+		HttpOnly: true, // Recommended to help prevent XSS
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode, // Use SameSiteNoneMode if your frontend and backend are served from different origins
+	}
+
+	http.SetCookie(w, cookie)
+	utils.RespondWithJSON(w, http.StatusOK, u)
 
 }
 

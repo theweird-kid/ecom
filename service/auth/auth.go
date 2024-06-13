@@ -35,7 +35,6 @@ func ComparePassword(hashed string, plain []byte) bool {
 func MiddlewareAuth(handler http.HandlerFunc, db *database.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tokenString := GetTokenFromRequest(r)
-
 		token, err := ValidateToken(tokenString)
 		if err != nil {
 			log.Printf("Failed to validate token: %v", err)
@@ -74,14 +73,23 @@ func MiddlewareAuth(handler http.HandlerFunc, db *database.Queries) http.Handler
 }
 
 func GetTokenFromRequest(r *http.Request) string {
-	tokenAuth := r.Header.Get("Authorization")
-	if tokenAuth != "" {
-		return tokenAuth
+	test := r.Cookies()
+	log.Println(len(test))
+	for _, c := range test {
+		log.Println(c.Name, c.Value)
+	}
+	tokenAuth, err := r.Cookie("Authorization")
+	if err != nil {
+		return ""
+	}
+	if tokenAuth.Value != "" {
+		return tokenAuth.Value
 	}
 	return ""
 }
 
 func ValidateToken(t string) (*jwt.Token, error) {
+	log.Println(t) //debug
 	return jwt.Parse(t, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
